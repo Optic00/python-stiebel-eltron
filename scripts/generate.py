@@ -194,8 +194,11 @@ def _field_factory(row: list[str], cols: Columns, *, writable: bool) -> str:
     if data_type in ("6", "8"):
         # A documented 0..1 range is a flag, not a number worth comparing, and
         # boolean() also turns an out-of-spec code into None rather than a
-        # value that reads as on. It takes no unit, and none of these carry one.
+        # value that reads as on. It takes no unit, so reject one rather than
+        # silently dropping CSV metadata.
         if (low, high) == (0, 1):
+            if unit:
+                raise ValueError(f"0..1 register {name!r} cannot declare unit {unit!r}")
             return f"boolean({wire}, nan=UNAVAILABLE{', writable=True' if writable else ''})"
         return f"integer({wire}, signed=False, nan=UNAVAILABLE{unit_arg}{writable_arg})"
     raise ValueError(f"unhandled data type {data_type!r} for {name!r}")
