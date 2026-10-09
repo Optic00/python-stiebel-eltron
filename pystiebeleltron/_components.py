@@ -87,6 +87,30 @@ class ControllerComponents:
         self._optional_readers: dict[Component, Component | ComponentGroup] = {
             component: ComponentGroup(read_unit, [component]) if self._read_retry is not None else component for component in self._optional
         }
+        # Optional components the controller has answered at least once.
+        self._served: list[Component] = []
+
+    def _mark_served(self, component: Component) -> None:
+        """Remember that the controller has answered this optional component."""
+        if component not in self._served:
+            self._served.append(component)
+
+    def _drop_unserved(self, component: Component, err: IllegalDataAddressError) -> None:
+        """Stop reading a refused optional component, unless it was answered before.
+
+        A refusal of a block the controller has served is a failed read: the
+        error propagates and fails the poll, so its listeners go stale instead
+        of showing the last values as current.
+        """
+        if component in self._served:
+            raise err
+        self._optional.remove(component)
+        del self._optional_readers[component]
+        _LOGGER.info(
+            "The controller does not serve the registers of %s, so they stay unavailable and are not read again: %s",
+            type(component).__name__,
+            err,
+        )
 
     async def async_update(self) -> None:
         """Read the required components, then the optional ones still in play.
@@ -95,7 +119,9 @@ class ControllerComponents:
         illegal data address is not an error of the poll: that is how a
         controller says it does not have the block. Any other answer means the
         registers are there and the read went wrong, so it fails the poll and
-        the block is read again next time.
+        the block is read again next time. So does illegal data address for a
+        block the controller has already answered: it has the registers, and
+        dropping the block would keep its last values as if they were current.
 
         Nothing is notified until every read that could still fail the poll has
         succeeded. Reading in sequence would otherwise let a poll tell listeners
@@ -115,14 +141,9 @@ class ControllerComponents:
                 # device busy both say the registers are there and the read went
                 # wrong, so they stay uncaught and fail the poll.
                 except IllegalDataAddressError as err:
-                    self._optional.remove(component)
-                    del self._optional_readers[component]
-                    _LOGGER.info(
-                        "The controller does not serve the registers of %s, so they stay unavailable and are not read again: %s",
-                        type(component).__name__,
-                        err,
-                    )
+                    self._drop_unserved(component, err)
                 else:
+                    self._mark_served(component)
                     updated.append(component)
 
             for component in (*self._required, *updated):
@@ -143,14 +164,9 @@ class ControllerComponents:
                 # device busy both say the registers are there and the read went
                 # wrong, so they stay uncaught and fail the poll.
                 except IllegalDataAddressError as err:
-                    self._optional.remove(component)
-                    del self._optional_readers[component]
-                    _LOGGER.info(
-                        "The controller does not serve the registers of %s, so they stay unavailable and are not read again: %s",
-                        type(component).__name__,
-                        err,
-                    )
+                    self._drop_unserved(component, err)
                 else:
+                    self._mark_served(component)
                     updated.append(component)
 
             for component in (*self._required, *updated):
