@@ -481,3 +481,8 @@ class Wpm3StiebelEltronAPI:
     async def async_read_raw(self) -> Raw:
         """Read every component the controller serves, in one poll."""
         return await self._group.async_read_raw()
+
+    @property
+    def dropped_optional_components(self) -> tuple[str, ...]:
+        """Class names of optional components the controller refused and that are no longer read."""
+        return tuple(type(component).__name__ for component in self._group.dropped_optional)

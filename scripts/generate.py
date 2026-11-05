@@ -164,6 +164,20 @@ LWZ = Controller(
     compressor_starts=True,
 )
 
+# Experimental, read-only: an ISG-connected WPM G (Genesis family) answers this
+# separate FC04 map. Only System Values is required, so a firmware without the
+# status or alarm blocks still yields the temperatures. A refused optional block
+# leaves all of its fields unknown, never "off". Issue pail23/stiebel_eltron_isg_component#684.
+WPMG = Controller(
+    type="WpmG",
+    columns=WPM_COLUMNS,
+    blocks=[
+        Block("System Values", "wpmg_system_values.csv", "input"),
+        Block("System State", "wpmg_system_state.csv", "input", optional=True),
+        Block("Alarms", "wpmg_alarms.csv", "input", optional=True),
+    ],
+)
+
 
 def python_name(name: str, suffix: str = "") -> str:
     """A register's enum/attribute stem, suffix-disambiguated (pre-lowercasing)."""
@@ -505,7 +519,7 @@ def build(controller: Controller, root: Path) -> dict[str, object]:
         "components": components,
         "api_class": f"{controller.type}StiebelEltronAPI",
         "members": [(component.member, component.class_name) for component in components],
-        "retry_register_start": controller.type in {"Wpm", "Wpm3", "Wpm3i"},
+        "retry_register_start": controller.type in {"Wpm", "Wpm3", "Wpm3i", "WpmG"},
         "required_members": [component.member for component in components if not component.optional],
         "optional_members": [component.member for component in components if component.optional],
         "holding_ranges_const": _ranges_const(controller, "holding"),
@@ -524,7 +538,7 @@ def main() -> None:
     root = Path.cwd()
     env = Environment(loader=FileSystemLoader(TEMPLATES), trim_blocks=True, lstrip_blocks=True, keep_trailing_newline=True)
     paths = []
-    for controller in (WPM, WPM3, WPM3i, LWZ):
+    for controller in (WPM, WPM3, WPM3i, LWZ, WPMG):
         generate(controller, root, env)
         paths.append(str(root / f"pystiebeleltron/{controller.type.lower()}.py"))
     subprocess.run(["ruff", "format", *paths], check=True)

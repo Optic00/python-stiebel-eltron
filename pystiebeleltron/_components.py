@@ -92,6 +92,17 @@ class ControllerComponents:
         # those of them whose refusal has been logged since their last answer.
         self._served: list[Component] = []
         self._refusal_logged: list[Component] = []
+        # Optional components dropped after a first refusal, in drop order.
+        self._dropped: list[Component] = []
+
+    @property
+    def dropped_optional(self) -> tuple[Component, ...]:
+        """Optional components the controller refused before ever answering them.
+
+        Their fields stay ``None`` and they are not read again for the life of
+        this object. Cheap to query: no I/O.
+        """
+        return tuple(self._dropped)
 
     def _mark_served(self, component: Component) -> None:
         """Remember that the controller has answered this optional component."""
@@ -120,6 +131,7 @@ class ControllerComponents:
             raise err
         self._optional.remove(component)
         del self._optional_readers[component]
+        self._dropped.append(component)
         _LOGGER.info(
             "The controller does not serve the registers of %s, so they stay unavailable and are not read again: %s",
             type(component).__name__,
